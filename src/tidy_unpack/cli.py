@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Unpack archives into exactly one clean folder each, in the current directory.",
     )
     parser.add_argument("archives", nargs="+", type=Path, metavar="ARCHIVE")
+    parser.add_argument(
+        "--keep-junk",
+        action="store_true",
+        help="keep __MACOSX/, .DS_Store, Thumbs.db, desktop.ini and ._* files",
+    )
     return parser
 
 
@@ -30,12 +35,13 @@ def main(argv: list[str] | None = None) -> int:
     status = 0
     for archive in args.archives:
         try:
-            result = unpack(archive, Path.cwd())
+            result = unpack(archive, Path.cwd(), args.keep_junk)
         except (OSError, UnsupportedArchive, UnsafeArchive) as e:
             print(f"tidyx: {archive}: {e}", file=sys.stderr)
             status = 1
             continue
-        print(f"{archive} -> {_shown(result.path)}")
+        note = f" ({result.junk} junk entries dropped)" if result.junk else ""
+        print(f"{archive} -> {_shown(result.path)}{note}")
         for skipped in result.skipped:
             print(f"  skipped {skipped}", file=sys.stderr)
     return status

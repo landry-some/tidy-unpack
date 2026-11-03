@@ -127,3 +127,21 @@ def test_link_clashing_with_a_folder_is_skipped(dest, tar_factory):
     assert (result.path / "via" / "f").read_bytes() == b"x"
     assert not (result.path / "real" / "f").exists()  # files never go through links
     assert result.skipped == ["p/via (link clashes with another entry)"]
+
+
+def test_mac_zip_junk_does_not_block_collapse(dest, zip_factory):
+    arc = zip_factory(
+        "p.zip",
+        {"p/a.txt": b"1", "p/.DS_Store": b"", "__MACOSX/p/._a.txt": b""},
+    )
+    result = unpack(arc, dest)
+    assert result.path == dest / "p"
+    assert tree(result.path) == ["a.txt"]
+    assert result.junk == 2
+
+
+def test_keep_junk(dest, zip_factory):
+    arc = zip_factory("p.zip", {"p/a.txt": b"1", "__MACOSX/p/._a.txt": b""})
+    result = unpack(arc, dest, keep_junk=True)
+    assert tree(result.path) == ["__MACOSX/", "__MACOSX/p/", "__MACOSX/p/._a.txt", "p/", "p/a.txt"]
+    assert result.junk == 0

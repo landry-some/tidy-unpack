@@ -20,3 +20,12 @@ def test_bad_archive_reports_and_continues(tmp_path, monkeypatch, capsys, zip_fa
     captured = capsys.readouterr()
     assert "bad.zip" in captured.err
     assert (tmp_path / "good" / "x").exists()
+
+
+def test_reports_dropped_junk(tmp_path, monkeypatch, capsys, zip_factory):
+    arc = zip_factory("m.zip", {"m/a": b"1", "m/.DS_Store": b""})
+    monkeypatch.chdir(tmp_path)
+    assert main([str(arc)]) == 0
+    assert "(1 junk entries dropped)" in capsys.readouterr().out
+    assert main(["--keep-junk", str(arc)]) == 0
+    assert (tmp_path / "m-2" / ".DS_Store").exists()

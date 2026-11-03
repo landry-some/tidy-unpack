@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from .archive import Archive, Entry, open_archive, strip_archive_suffix
+from .junk import drop_junk
 from .layout import Layout, plan_layout
 
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -23,6 +24,7 @@ class UnsafeArchive(Exception):
 class Unpacked:
     path: Path
     skipped: list[str] = field(default_factory=list)
+    junk: int = 0
 
 
 def check_name(entry: Entry) -> None:
@@ -59,15 +61,19 @@ def unique_path(dest: Path, name: str, is_file: bool = False) -> Path:
     return candidate
 
 
-def prepare(arc: Archive, archive_path: Path) -> Layout:
-    """Check every entry, then plan where it goes."""
+def prepare(arc: Archive, archive_path: Path, keep_junk: bool = False) -> tuple[Layout, int]:
+    """Check every entry, drop junk unless asked not to, then plan where it goes.
+
+    Returns the layout and the number of junk entries dropped.
+    """
     for entry in arc.entries:
         check_name(entry)
-    layout = plan_layout(arc.entries, strip_archive_suffix(archive_path.name))
+    entries, junk = (arc.entries, 0) if keep_junk else drop_junk(arc.entries)
+    layout = plan_layout(entries, strip_archive_suffix(archive_path.name))
     for entry, rel in layout.members:
         if entry.kind == "symlink":
             check_link(entry, rel)
-    return layout
+    return layout, junk
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -121,8 +127,10 @@ def write_layout(arc: Archive, layout: Layout, dest: Path) -> Unpacked:
     return result
 
 
-def unpack(archive_path: Path, dest: Path) -> Unpacked:
+def unpack(archive_path: Path, dest: Path, keep_junk: bool = False) -> Unpacked:
     """Unpack ``archive_path`` into one new item inside ``dest``."""
     with open_archive(archive_path) as arc:
-        layout = prepare(arc, archive_path)
-        return write_layout(arc, layout, dest)
+        layout, junk = prepare(arc, archive_path, keep_junk)
+        result = write_layout(arc, layout, dest)
+    result.junk = junk
+    return result
