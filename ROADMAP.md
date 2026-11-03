@@ -2,11 +2,11 @@
 
 ## v0.1
 
-- [ ] Detect the format from magic bytes: zip, tar, tar.gz/.bz2/.xz, plain .gz/.bz2/.xz
-- [ ] Normalize the layout: one output folder named after the archive
-- [ ] Safe extraction: no absolute paths, `..` or escaping links; never overwrite
-- [ ] Drop junk entries (`__MACOSX/`, `.DS_Store`, `Thumbs.db`, `._*`), `--keep-junk` to keep them
-- [ ] `--dry-run` to show the target folder and entries without writing
+- [x] Detect the format from magic bytes: zip, tar, tar.gz/.bz2/.xz, plain .gz/.bz2/.xz
+- [x] Normalize the layout: one output folder named after the archive
+- [x] Safe extraction: no absolute paths, `..` or escaping links; never overwrite
+- [x] Drop junk entries (`__MACOSX/`, `.DS_Store`, `Thumbs.db`, `._*`), `--keep-junk` to keep them
+- [x] `--dry-run` to show the target folder and entries without writing
 
 ## After v0.1 (about 31 hours)
 
@@ -30,7 +30,7 @@
 
 ### Refactors
 
-- [ ] Split each format into a small backend with the same list/extract interface (~2 h)
+- [ ] Move CLI output into one reporter so `--quiet` and `--json` can share it (~2 h)
 - [ ] Stream single-file decompression instead of reading whole members into memory (~1 h)
 
 ### Tests
