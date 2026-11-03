@@ -76,6 +76,11 @@ def prepare(arc: Archive, archive_path: Path, keep_junk: bool = False) -> tuple[
     return layout, junk
 
 
+def target_path(dest: Path, layout: Layout) -> Path:
+    """Where the layout's root would be created inside ``dest`` right now."""
+    return unique_path(dest, layout.root, layout.is_single_file)
+
+
 def _inside(path: Path, root: Path) -> bool:
     return path.resolve().is_relative_to(root)
 
@@ -87,7 +92,7 @@ def _write_file(arc: Archive, entry: Entry, out: Path, mode: str = "wb") -> None
 
 def write_layout(arc: Archive, layout: Layout, dest: Path) -> Unpacked:
     """Create the layout's root under ``dest`` and fill it."""
-    target = unique_path(dest, layout.root, layout.is_single_file)
+    target = target_path(dest, layout)
     result = Unpacked(target)
 
     if layout.is_single_file:
@@ -134,3 +139,13 @@ def unpack(archive_path: Path, dest: Path, keep_junk: bool = False) -> Unpacked:
         result = write_layout(arc, layout, dest)
     result.junk = junk
     return result
+
+
+def plan(archive_path: Path, dest: Path, keep_junk: bool = False) -> tuple[Path, Layout, int]:
+    """Do every check ``unpack`` does, but write nothing.
+
+    Returns the path that would be created, the layout and the junk count.
+    """
+    with open_archive(archive_path) as arc:
+        layout, junk = prepare(arc, archive_path, keep_junk)
+    return target_path(dest, layout), layout, junk
