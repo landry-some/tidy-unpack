@@ -28,9 +28,11 @@ tidyx release-1.2.tar.gz         # -> ./release-1.2/
 tidyx photos.zip                 # -> ./photos/
 tidyx --dry-run photos.zip       # show where it would go and what's inside (-n)
 tidyx --keep-junk photos.zip     # keep __MACOSX/, .DS_Store and friends
+tidyx --into ~/src app.tar.gz    # -> ~/src/app/ (DIR must already exist)
 ```
 
-`tidyx` writes into the current directory and takes several archives at once. If one
+`tidyx` writes into the current directory, or into `--into DIR`, and takes several
+archives at once. If one
 fails, the rest are still unpacked and the exit code is 1.
 
 ## What it does to an archive

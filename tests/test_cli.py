@@ -1,3 +1,5 @@
+import pytest
+
 from tidy_unpack.cli import main
 
 
@@ -61,3 +63,25 @@ def test_dry_run_still_rejects_unsafe(tmp_path, monkeypatch, capsys, tar_factory
     monkeypatch.chdir(tmp_path)
     assert main(["-n", str(arc)]) == 1
     assert "unsafe path" in capsys.readouterr().err
+
+
+def test_into_puts_output_in_dir(tmp_path, monkeypatch, capsys, zip_factory):
+    arc = zip_factory("photos.zip", {"a.jpg": b"1", "b.jpg": b"2"})
+    (tmp_path / "out").mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert main(["--into", "out", str(arc)]) == 0
+    assert (tmp_path / "out" / "photos" / "a.jpg").exists()
+    assert not (tmp_path / "photos").exists()
+    assert capsys.readouterr().out.endswith("-> out/photos/\n")
+    assert main(["-n", "--into", "out", str(arc)]) == 0
+    assert "-> out/photos-2/ (dry run)" in capsys.readouterr().out
+
+
+def test_into_must_be_an_existing_folder(tmp_path, monkeypatch, capsys, zip_factory):
+    arc = zip_factory("photos.zip", {"a.jpg": b"1"})
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as e:
+        main(["--into", "missing", str(arc)])
+    assert e.value.code == 2
+    assert "not a folder: missing" in capsys.readouterr().err
+    assert not (tmp_path / "missing").exists()

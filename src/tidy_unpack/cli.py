@@ -15,7 +15,7 @@ from .layout import Layout
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tidyx",
-        description="Unpack archives into exactly one clean folder each, in the current directory.",
+        description="Unpack archives into exactly one clean folder each, in the current directory or --into DIR.",
     )
     parser.add_argument("archives", nargs="+", type=Path, metavar="ARCHIVE")
     parser.add_argument(
@@ -28,6 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="show where each archive would go and what's in it, write nothing",
+    )
+    parser.add_argument(
+        "--into",
+        type=Path,
+        default=Path("."),
+        metavar="DIR",
+        help="put the output folders in DIR (an existing folder) instead of the current directory",
     )
     return parser
 
@@ -56,14 +63,18 @@ def show_plan(archive: Path, target: Path, layout: Layout, junk: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not args.into.is_dir():
+        parser.error(f"--into: not a folder: {args.into}")
+    dest = args.into.absolute()
     status = 0
     for archive in args.archives:
         try:
             if args.dry_run:
-                show_plan(archive, *plan(archive, Path.cwd(), args.keep_junk))
+                show_plan(archive, *plan(archive, dest, args.keep_junk))
                 continue
-            result = unpack(archive, Path.cwd(), args.keep_junk)
+            result = unpack(archive, dest, args.keep_junk)
         except (OSError, UnsupportedArchive, UnsafeArchive) as e:
             print(f"tidyx: {archive}: {e}", file=sys.stderr)
             status = 1

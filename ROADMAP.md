@@ -12,7 +12,7 @@
 
 ### Features
 
-- [ ] `--into DIR` to choose where the output folder goes (~1 h)
+- [x] `--into DIR` to choose where the output folder goes (~1 h)
 - [ ] 7z and rar through `7z`/`unar` when they are on PATH, with a clear error when not (~4 h)
 - [ ] zstd (`.tar.zst`, `.zst`) through the `zstd` binary or `compression.zstd` on Python 3.14 (~2 h)
 - [ ] `--nested` to unpack archives found inside the archive, one level deep (~2.5 h)
