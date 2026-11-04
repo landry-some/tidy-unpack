@@ -1,4 +1,9 @@
+import io
 import os
+import stat
+import tarfile
+import time
+import zipfile
 
 import pytest
 
@@ -191,3 +196,59 @@ def test_failure_does_not_touch_existing_output(dest, zip_factory, monkeypatch):
         unpack(arc, dest)
     assert tree(dest) == ["report.pdf"]
     assert (dest / "report.pdf").read_bytes() == b"mine"
+
+
+def _tar_member(t, name, mode, mtime, data=None):
+    info = tarfile.TarInfo(name)
+    info.mode, info.mtime = mode, mtime
+    if data is None:
+        info.type = tarfile.DIRTYPE
+        t.addfile(info)
+    else:
+        info.size = len(data)
+        t.addfile(info, io.BytesIO(data))
+
+
+def test_tar_keeps_permissions_and_mtimes(dest, tmp_path):
+    arc = tmp_path / "p.tar"
+    with tarfile.open(arc, "w") as t:
+        _tar_member(t, "p", 0o755, 1_000_000)
+        _tar_member(t, "p/bin", 0o555, 2_000_000)
+        _tar_member(t, "p/bin/run", 0o4775, 3_000_000, b"#!/bin/sh\n")
+        _tar_member(t, "p/secret", 0o400, 4_000_000, b"x")
+    result = unpack(arc, dest)
+    run = result.path / "bin" / "run"
+    assert stat.S_IMODE(run.stat().st_mode) == 0o755  # setuid and group write dropped
+    assert stat.S_IMODE((result.path / "secret").stat().st_mode) == 0o600
+    assert stat.S_IMODE((result.path / "bin").stat().st_mode) == 0o755
+    assert run.stat().st_mtime == 3_000_000
+    assert (result.path / "bin").stat().st_mtime == 2_000_000
+
+
+def test_zip_keeps_permissions_and_mtimes(dest, tmp_path):
+    arc = tmp_path / "p.zip"
+    with zipfile.ZipFile(arc, "w") as z:
+        info = zipfile.ZipInfo("p/run", date_time=(2020, 5, 17, 12, 30, 0))
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o750) << 16
+        z.writestr(info, b"x")
+        dos = zipfile.ZipInfo("p/dos.txt", date_time=(2001, 1, 1, 0, 0, 0))
+        dos.create_system = 0
+        dos.external_attr = 0x20  # DOS "archive" flag, no Unix bits
+        z.writestr(dos, b"y")
+    result = unpack(arc, dest)
+    run = result.path / "run"
+    assert stat.S_IMODE(run.stat().st_mode) == 0o750
+    assert run.stat().st_mtime == time.mktime((2020, 5, 17, 12, 30, 0, 0, 0, -1))
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE((result.path / "dos.txt").stat().st_mode) == 0o666 & ~umask
+    assert (result.path / "dos.txt").stat().st_mtime == time.mktime((2001, 1, 1, 0, 0, 0, 0, 0, -1))
+
+
+def test_lone_file_keeps_mtime(dest, tmp_path):
+    arc = tmp_path / "dl.zip"
+    with zipfile.ZipFile(arc, "w") as z:
+        z.writestr(zipfile.ZipInfo("report.pdf", date_time=(2019, 3, 1, 8, 0, 0)), b"%PDF")
+    result = unpack(arc, dest)
+    assert result.path.stat().st_mtime == time.mktime((2019, 3, 1, 8, 0, 0, 0, 0, -1))

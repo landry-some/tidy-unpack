@@ -7,8 +7,9 @@ import gzip
 import lzma
 import stat
 import tarfile
+import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
@@ -38,11 +39,15 @@ class Entry:
     ``name`` is the path inside the archive with forward slashes and no
     leading "./" or trailing "/". ``kind`` is "file", "dir", "symlink" or
     "other" (devices, fifos). ``target`` is the link target for symlinks.
+    ``mode`` (permission bits) and ``mtime`` are None when the archive
+    doesn't record them; they don't count when comparing entries.
     """
 
     name: str
     kind: str
     target: str = ""
+    mode: int | None = field(default=None, compare=False)
+    mtime: float | None = field(default=None, compare=False)
 
 
 def strip_archive_suffix(filename: str) -> str:
@@ -107,13 +112,17 @@ class _ZipArchive(Archive):
             if not name:
                 continue
             mode = info.external_attr >> 16
+            # Only zips made on Unix store permission bits.
+            perms = stat.S_IMODE(mode) if info.create_system == 3 and mode else None
+            # Zip times are local time, without a time zone.
+            mtime = time.mktime(info.date_time + (0, 0, -1))
             if info.is_dir():
-                entry = Entry(name, "dir")
+                entry = Entry(name, "dir", mode=perms, mtime=mtime)
             elif stat.S_ISLNK(mode):
                 target = self._zip.read(info).decode("utf-8", "replace")
                 entry = Entry(name, "symlink", target)
             else:
-                entry = Entry(name, "file")
+                entry = Entry(name, "file", mode=perms, mtime=mtime)
             self._infos[name] = info
             self.entries.append(entry)
 
@@ -135,13 +144,14 @@ class _TarArchive(Archive):
             name = clean_name(member.name)
             if not name:
                 continue
+            meta = {"mode": stat.S_IMODE(member.mode), "mtime": member.mtime}
             if member.isdir():
-                entry = Entry(name, "dir")
+                entry = Entry(name, "dir", **meta)
             elif member.issym():
                 entry = Entry(name, "symlink", member.linkname)
             elif member.isfile() or member.islnk():
                 # Hard links are read through to their target's data.
-                entry = Entry(name, "file")
+                entry = Entry(name, "file", **meta)
             else:
                 entry = Entry(name, "other")
             self._members[name] = member

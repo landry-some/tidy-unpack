@@ -68,8 +68,13 @@ archive. Devices and fifos are skipped with a message. If unpacking fails halfwa
 you press Ctrl-C, the half-written output is removed again. `--dry-run` runs the same
 checks, so you can see whether an archive would be refused.
 
-Not supported yet: 7z, rar, zstd, encrypted zips, and keeping file permissions and
-modification times. These are in [ROADMAP.md](ROADMAP.md).
+Modification times and permissions are kept from both zip and tar (zips made on
+Windows carry no permissions, so their files get the usual defaults). setuid, setgid,
+sticky and group/other write bits are dropped, and you always keep read and write
+access to the files and folders you unpacked.
+
+Not supported yet: 7z, rar, zstd and encrypted zips. These are in
+[ROADMAP.md](ROADMAP.md).
 
 ## Test
 

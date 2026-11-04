@@ -88,6 +88,19 @@ def _inside(path: Path, root: Path) -> bool:
 def _write_file(arc: Archive, entry: Entry, out: Path) -> None:
     with arc.read(entry) as src, open(out, "wb") as dst:
         shutil.copyfileobj(src, dst)
+    _set_meta(entry, out, 0o600)
+
+
+def _set_meta(entry: Entry, out: Path, owner: int) -> None:
+    """Apply the entry's permissions and mtime, if the archive has them.
+
+    setuid, setgid, sticky and group/other write bits are dropped, and the
+    owner always keeps ``owner`` access so the output can be used and removed.
+    """
+    if entry.mode is not None:
+        os.chmod(out, entry.mode & 0o755 | owner)
+    if entry.mtime is not None:
+        os.utime(out, (entry.mtime, entry.mtime))
 
 
 def write_layout(arc: Archive, layout: Layout, dest: Path) -> Unpacked:
@@ -118,6 +131,7 @@ def _fill(arc: Archive, layout: Layout, target: Path) -> Unpacked:
     result = Unpacked(target)
     root = target.resolve()
     links = []
+    dirs = []
     for entry, rel in layout.members:
         out = target / rel
         # Symlinks are only created at the end, so nothing below follows one
@@ -126,6 +140,7 @@ def _fill(arc: Archive, layout: Layout, target: Path) -> Unpacked:
             raise UnsafeArchive(f"path leaves the folder: {entry.name}")
         if entry.kind == "dir":
             out.mkdir(parents=True, exist_ok=True)
+            dirs.append((entry, out))
         elif entry.kind == "file":
             out.parent.mkdir(parents=True, exist_ok=True)
             _write_file(arc, entry, out)
@@ -145,6 +160,10 @@ def _fill(arc: Archive, layout: Layout, target: Path) -> Unpacked:
             os.symlink(entry.target, out)
         except OSError as e:
             result.skipped.append(f"{entry.name} (could not create link: {e.strerror})")
+
+    # Folders last and deepest first, since filling a folder changes its mtime.
+    for entry, out in sorted(dirs, key=lambda d: len(d[1].parts), reverse=True):
+        _set_meta(entry, out, 0o700)
     return result
 
 
