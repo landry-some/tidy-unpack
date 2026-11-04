@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from tidy_unpack import extract
 from tidy_unpack.archive import Entry
 from tidy_unpack.extract import UnsafeArchive, check_link, check_name, unique_path, unpack
 
@@ -145,3 +146,48 @@ def test_keep_junk(dest, zip_factory):
     result = unpack(arc, dest, keep_junk=True)
     assert tree(result.path) == ["__MACOSX/", "__MACOSX/p/", "__MACOSX/p/._a.txt", "p/", "p/a.txt"]
     assert result.junk == 0
+
+
+@pytest.mark.parametrize("error", [OSError("disk full"), KeyboardInterrupt()])
+def test_failed_unpack_leaves_nothing_behind(dest, zip_factory, monkeypatch, error):
+    arc = zip_factory("p.zip", {"p/a": b"1", "p/sub/b": b"2"}, symlinks={"p/l": "a"})
+    real_write = extract._write_file
+    calls = []
+
+    def flaky_write(*args, **kw):
+        calls.append(1)
+        if len(calls) == 2:
+            raise error
+        real_write(*args, **kw)
+
+    monkeypatch.setattr(extract, "_write_file", flaky_write)
+    with pytest.raises(type(error)):
+        unpack(arc, dest)
+    assert tree(dest) == []
+
+
+def test_failed_single_file_is_removed(dest, zip_factory, monkeypatch):
+    arc = zip_factory("dl.zip", {"report.pdf": b"%PDF"})
+
+    def broken_write(arc, entry, out):
+        out.write_bytes(b"half")
+        raise OSError("read error")
+
+    monkeypatch.setattr(extract, "_write_file", broken_write)
+    with pytest.raises(OSError):
+        unpack(arc, dest)
+    assert tree(dest) == []
+
+
+def test_failure_does_not_touch_existing_output(dest, zip_factory, monkeypatch):
+    (dest / "report.pdf").write_bytes(b"mine")
+    arc = zip_factory("dl.zip", {"report.pdf": b"new"})
+
+    def broken_write(arc, entry, out):
+        raise OSError("read error")
+
+    monkeypatch.setattr(extract, "_write_file", broken_write)
+    with pytest.raises(OSError):
+        unpack(arc, dest)
+    assert tree(dest) == ["report.pdf"]
+    assert (dest / "report.pdf").read_bytes() == b"mine"

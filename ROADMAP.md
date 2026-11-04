@@ -25,7 +25,7 @@
 - [ ] Fix mojibake in zip names written in CP437 or Shift-JIS without the UTF-8 flag (~2 h)
 - [ ] Keep file permissions and modification times from both zip and tar (~1.5 h)
 - [ ] Handle names that clash only by case on case-insensitive filesystems (~1.5 h)
-- [ ] Clean up the half-written folder when extraction fails or is interrupted (~1 h)
+- [x] Clean up the half-written folder when extraction fails or is interrupted (~1 h)
 - [ ] Multi-part archives (`.zip.001`, `.part1.rar`) detected and reported (~1 h)
 
 ### Refactors

@@ -64,7 +64,8 @@ The whole archive is refused, before anything is written, if any entry:
 - is a symlink whose target is absolute or would point outside the output folder.
 
 Symlinks are created last, so no file is ever written through a link from the
-archive. Devices and fifos are skipped with a message. `--dry-run` runs the same
+archive. Devices and fifos are skipped with a message. If unpacking fails halfway, or
+you press Ctrl-C, the half-written output is removed again. `--dry-run` runs the same
 checks, so you can see whether an archive would be refused.
 
 Not supported yet: 7z, rar, zstd, encrypted zips, and keeping file permissions and

@@ -85,21 +85,37 @@ def _inside(path: Path, root: Path) -> bool:
     return path.resolve().is_relative_to(root)
 
 
-def _write_file(arc: Archive, entry: Entry, out: Path, mode: str = "wb") -> None:
-    with arc.read(entry) as src, open(out, mode) as dst:
+def _write_file(arc: Archive, entry: Entry, out: Path) -> None:
+    with arc.read(entry) as src, open(out, "wb") as dst:
         shutil.copyfileobj(src, dst)
 
 
 def write_layout(arc: Archive, layout: Layout, dest: Path) -> Unpacked:
-    """Create the layout's root under ``dest`` and fill it."""
-    target = target_path(dest, layout)
-    result = Unpacked(target)
+    """Create the layout's root under ``dest`` and fill it.
 
+    If anything goes wrong, including Ctrl-C, the half-written output is removed.
+    """
+    target = target_path(dest, layout)
     if layout.is_single_file:
-        _write_file(arc, layout.members[0][0], target, "xb")
-        return result
+        # Claim the name first, so cleanup never removes a file someone else made.
+        open(target, "xb").close()
+        try:
+            _write_file(arc, layout.members[0][0], target)
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+        return Unpacked(target)
 
     target.mkdir()
+    try:
+        return _fill(arc, layout, target)
+    except BaseException:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+
+
+def _fill(arc: Archive, layout: Layout, target: Path) -> Unpacked:
+    result = Unpacked(target)
     root = target.resolve()
     links = []
     for entry, rel in layout.members:
