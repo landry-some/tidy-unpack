@@ -5,27 +5,35 @@ from __future__ import annotations
 import bz2
 import gzip
 import lzma
+import shutil
 import stat
+import subprocess
 import tarfile
+import tempfile
 import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+try:
+    from compression import zstd as _zstd  # Python 3.14+
+except ImportError:
+    _zstd = None
+
 # Compound suffixes first, so "a.tar.gz" loses ".tar.gz" and not just ".gz".
 ARCHIVE_SUFFIXES = (
-    ".tar.gz", ".tar.bz2", ".tar.xz",
-    ".tgz", ".tbz2", ".tbz", ".txz",
-    ".tar", ".zip", ".gz", ".bz2", ".xz",
+    ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst",
+    ".tgz", ".tbz2", ".tbz", ".txz", ".tzst",
+    ".tar", ".zip", ".gz", ".bz2", ".xz", ".zst",
 )
 
 _STREAM_MAGIC = {
     b"\x1f\x8b": "gz",
     b"BZh": "bz2",
     b"\xfd7zXZ\x00": "xz",
+    b"\x28\xb5\x2f\xfd": "zst",
 }
-_STREAM_OPENERS = {"gz": gzip.open, "bz2": bz2.open, "xz": lzma.open}
 
 
 class UnsupportedArchive(Exception):
@@ -67,18 +75,49 @@ def clean_name(raw: str) -> str:
     return name.rstrip("/")
 
 
+def open_zstd(path: Path) -> IO[bytes]:
+    """Open a zstd file decompressed, with ``compression.zstd`` or the zstd command."""
+    if _zstd is not None:
+        return _zstd.open(path, "rb")
+    if shutil.which("zstd") is None:
+        raise UnsupportedArchive(f"{path.name}: zstd needs Python 3.14+ or the zstd command")
+    out = tempfile.TemporaryFile()
+    proc = subprocess.run(
+        ["zstd", "-dcq", "--", str(path)], stdout=out, stderr=subprocess.PIPE
+    )
+    if proc.returncode != 0:
+        out.close()
+        error = proc.stderr.decode(errors="replace").strip()
+        raise UnsupportedArchive(f"{path.name}: damaged zst archive ({error})")
+    out.seek(0)
+    return out
+
+
+_STREAM_OPENERS = {
+    "gz": gzip.open,
+    "bz2": bz2.open,
+    "xz": lzma.open,
+    "zst": lambda path, mode: open_zstd(path),
+}
+
+
 def detect_format(path: Path) -> str:
-    """Return "zip", "tar", "gz", "bz2" or "xz" from the file's contents."""
+    """Return "zip", "tar", "gz", "bz2", "xz" or "zst" from the file's contents.
+
+    zstd is checked before tar, so a .tar.zst is "zst" on every Python version.
+    """
     with open(path, "rb") as f:
         head = f.read(8)
     if head.startswith((b"PK\x03\x04", b"PK\x05\x06")):
         return "zip"
+    if head.startswith(b"\x28\xb5\x2f\xfd"):
+        return "zst"
     if tarfile.is_tarfile(path):
         return "tar"
     for magic, fmt in _STREAM_MAGIC.items():
         if head.startswith(magic):
             return fmt
-    raise UnsupportedArchive(f"{path.name}: not a zip, tar, gzip, bzip2 or xz file")
+    raise UnsupportedArchive(f"{path.name}: not a zip, tar, gzip, bzip2, xz or zstd file")
 
 
 class Archive:
@@ -136,8 +175,10 @@ class _ZipArchive(Archive):
 class _TarArchive(Archive):
     format = "tar"
 
-    def __init__(self, path: Path) -> None:
-        self._tar = tarfile.open(path, "r:*")
+    def __init__(self, path: Path, fileobj: IO[bytes] | None = None) -> None:
+        # tarfile leaves a passed-in fileobj open, so close it ourselves.
+        self._fileobj = fileobj
+        self._tar = tarfile.open(path, "r:*", fileobj=fileobj)
         self._members: dict[str, tarfile.TarInfo] = {}
         self.entries = []
         for member in self._tar.getmembers():
@@ -165,10 +206,12 @@ class _TarArchive(Archive):
 
     def close(self) -> None:
         self._tar.close()
+        if self._fileobj is not None:
+            self._fileobj.close()
 
 
 class _StreamArchive(Archive):
-    """A single compressed file (.gz, .bz2, .xz) seen as a one-entry archive."""
+    """A single compressed file (.gz, .bz2, .xz, .zst) seen as a one-entry archive."""
 
     def __init__(self, path: Path, fmt: str) -> None:
         self.format = fmt
@@ -188,6 +231,22 @@ class _StreamArchive(Archive):
             self._file.close()
 
 
+_ZSTD_ERRORS = (_zstd.ZstdError,) if _zstd is not None else ()
+
+
+def _open_zst(path: Path) -> Archive:
+    """A .tar.zst is read as a tar, anything else as one compressed file."""
+    f = open_zstd(path)
+    try:
+        if tarfile.is_tarfile(f):
+            return _TarArchive(path, f)
+    except BaseException:
+        f.close()
+        raise
+    f.close()
+    return _StreamArchive(path, "zst")
+
+
 def open_archive(path: Path) -> Archive:
     """Open ``path`` with the reader that matches its contents."""
     fmt = detect_format(path)
@@ -196,6 +255,8 @@ def open_archive(path: Path) -> Archive:
             return _ZipArchive(path)
         if fmt == "tar":
             return _TarArchive(path)
+        if fmt == "zst":
+            return _open_zst(path)
         return _StreamArchive(path, fmt)
-    except (zipfile.BadZipFile, tarfile.TarError, EOFError) as e:
+    except (zipfile.BadZipFile, tarfile.TarError, EOFError, *_ZSTD_ERRORS) as e:
         raise UnsupportedArchive(f"{path.name}: damaged {fmt} archive ({e})") from e

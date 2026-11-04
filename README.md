@@ -38,8 +38,9 @@ fails, the rest are still unpacked and the exit code is 1.
 ## What it does to an archive
 
 The format comes from the file's contents, not its name, so a `.zip` that is really a
-`.tar.gz` still works. Supported: zip, tar, tar.gz, tar.bz2, tar.xz, and single files
-compressed with gzip, bzip2 or xz.
+`.tar.gz` still works. Supported: zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, and single
+files compressed with gzip, bzip2, xz or zstd. zstd needs Python 3.14+ or the `zstd`
+command on PATH.
 
 The output is always one new item named after the archive, without its extension:
 
@@ -47,7 +48,7 @@ The output is always one new item named after the archive, without its extension
 |---|---|
 | one top-level folder (`app-1.2/...`) | its contents go into `app-1.2/` (named after the archive) |
 | loose files or several folders | they are wrapped in one folder named after the archive |
-| a single file (`report.pdf`), or a plain `.gz`/`.bz2`/`.xz` | just that file, under its own name |
+| a single file (`report.pdf`), or a plain `.gz`/`.bz2`/`.xz`/`.zst` | just that file, under its own name |
 
 Nothing is ever overwritten. If the name is taken, the output becomes `name-2`,
 `name-3` and so on (`report-2.pdf` for files).
@@ -73,7 +74,7 @@ Windows carry no permissions, so their files get the usual defaults). setuid, se
 sticky and group/other write bits are dropped, and you always keep read and write
 access to the files and folders you unpacked.
 
-Not supported yet: 7z, rar, zstd and encrypted zips. These are in
+Not supported yet: 7z, rar and encrypted zips. These are in
 [ROADMAP.md](ROADMAP.md).
 
 ## Test
